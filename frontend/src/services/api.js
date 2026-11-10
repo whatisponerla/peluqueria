@@ -102,25 +102,44 @@ export async function createTurnoAPI(turnoData) {
     email: turnoData.email
   });
 
+  let response;
   try {
-    const response = await fetch(`${API_BASE_URL}/turnos`, {
+    response = await fetch(API_BASE_URL + '/turnos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(turnoData)
     });
-    if (response.ok) {
-      const result = await response.json();
-      return result;
-    } else {
-      const errRes = await response.json();
-      throw new Error(errRes.message || 'Error al crear turno');
-    }
   } catch (err) {
     console.warn('Backend API no disponible, ejecutando creación en LocalStorage:', err);
+    response = null;
+  }
+
+  if (response) {
+    const result = await response.json();
+    if (!response.ok) {
+      return {
+        success: false,
+        message: result.message || 'Error al crear turno'
+      };
+    }
+    return result;
   }
 
   // Fallback en LocalStorage
   const turnos = getLocalTurnos();
+  const normalizedDateTime = turnoData.fecha_hora.replace('T', ' ').slice(0, 16);
+  const occupied = turnos.some(turno =>
+    turno.estado !== 'Cancelado' &&
+    (turno.fecha_hora || '').replace('T', ' ').slice(0, 16) === normalizedDateTime
+  );
+
+  if (occupied) {
+    return {
+      success: false,
+      message: 'El horario seleccionado ya ha sido reservado. Elegí otro horario.'
+    };
+  }
+
   const newTurno = {
     id: Date.now(),
     cliente_id: Date.now(),

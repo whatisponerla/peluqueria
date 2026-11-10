@@ -1,190 +1,230 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, CheckCircle2, User, Phone, Mail, FileText, QrCode } from 'lucide-react';
-import { getSavedClientData, createTurnoAPI } from '../services/api';
+import React, { useEffect, useState } from 'react';
+import {
+  ArrowRight,
+  CalendarDays,
+  CalendarCheck,
+  ChevronDown,
+  Clock3,
+  Scissors
+} from 'lucide-react';
+import { createTurnoAPI, getSavedClientData } from '../services/api';
 import DatePickerModal from '../components/DatePickerModal';
 
-export default function ClientView() {
-  const [formData, setFormData] = useState({
-    nombre: '',
-    telefono: '',
-    email: '',
-    observaciones: ''
-  });
+function parseLocalDateTime(value) {
+  if (!value) return null;
+  const normalized = value.replace(' ', 'T');
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDate(value) {
+  const date = parseLocalDateTime(value);
+  if (!date) return value || 'A confirmar';
+  return new Intl.DateTimeFormat('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  }).format(date);
+}
+
+function formatTime(value) {
+  const date = parseLocalDateTime(value);
+  return date
+    ? new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit' }).format(date)
+    : 'A confirmar';
+}
+
+function getServiceLabel(observaciones) {
+  if (!observaciones) return 'A confirmar';
+  return observaciones.replace(/^Servicio:\s*/i, '');
+}
+
+export default function ClientView({ onAdminClick }) {
+  const [formData, setFormData] = useState({ nombre: '', telefono: '', email: '' });
+  const [service, setService] = useState('');
   const [selectedDateTime, setSelectedDateTime] = useState('');
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [submittedTurno, setSubmittedTurno] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Cargar autocompletado desde LocalStorage (RN-05)
   useEffect(() => {
     const saved = getSavedClientData();
-    if (saved.nombre || saved.telefono) {
-      setFormData(prev => ({
-        ...prev,
-        nombre: saved.nombre || '',
-        telefono: saved.telefono || '',
-        email: saved.email || ''
-      }));
-    }
+    setFormData(previous => ({
+      ...previous,
+      nombre: saved.nombre || '',
+      telefono: saved.telefono || '',
+      email: saved.email || ''
+    }));
   }, []);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleChange = event => {
+    setFormData(previous => ({ ...previous, [event.target.name]: event.target.value }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async event => {
+    event.preventDefault();
     if (!selectedDateTime) {
-      setErrorMsg('Por favor seleccione una fecha y horario para su turno.');
+      setErrorMsg('Elegí una fecha y un horario para continuar.');
       return;
     }
 
     setErrorMsg('');
     setIsSubmitting(true);
-
     try {
-      const res = await createTurnoAPI({
+      const observations = service.trim() ? 'Servicio: ' + service.trim() : '';
+      const result = await createTurnoAPI({
         ...formData,
+        observaciones: observations,
         fecha_hora: selectedDateTime
       });
 
-      if (res.success) {
-        setSubmittedTurno(res.data);
+      if (result.success) {
+        setSubmittedTurno(result.data);
       } else {
-        setErrorMsg(res.message || 'Error al reservar el turno.');
+        setErrorMsg(result.message || 'No pudimos reservar ese horario. Elegí otro.');
       }
-    } catch (err) {
-      setErrorMsg(err.message || 'Error de conexión.');
+    } catch (error) {
+      setErrorMsg(error.message || 'No pudimos conectar con la barbería. Intentá nuevamente.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const resetBooking = () => {
+    setSubmittedTurno(null);
+    setSelectedDateTime('');
+    setService('');
+    setErrorMsg('');
+  };
+
   return (
-    <div className="main-content">
-      {submittedTurno ? (
-        <div className="success-card">
-          <div className="success-icon">
-            <CheckCircle2 size={32} />
+    <main className="barberia-screen booking-screen">
+      <header className="brand-header">
+        <div className="brand-lockup">
+          <span className="brand-mark"><Scissors size={20} strokeWidth={1.8} /></span>
+          <div>
+            <div className="brand-name">Gibbons</div>
+            <div className="brand-subtitle">Barberia</div>
           </div>
-          <h2>¡Turno Reservado!</h2>
-          <p>Tu solicitud fue registrada con éxito.</p>
-
-          <div style={{ background: '#181c26', padding: 14, borderRadius: 10, width: '100%', textAlign: 'left' }}>
-            <div style={{ color: 'var(--primary-color)', fontWeight: 700, fontSize: '1.1rem' }}>
-              {submittedTurno.nombre}
-            </div>
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              📍 Fecha y Hora: <strong>{submittedTurno.fecha_hora}</strong>
-            </div>
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              📞 Teléfono: {submittedTurno.telefono}
-            </div>
-          </div>
-
-          <button
-            className="btn-secondary"
-            onClick={() => {
-              setSubmittedTurno(null);
-              setSelectedDateTime('');
-            }}
-          >
-            Reservar otro turno
-          </button>
         </div>
-      ) : (
-        <>
-          <div style={{ textAlign: 'center', marginBottom: 10 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(229,180,82,0.1)', color: 'var(--primary-color)', padding: '4px 12px', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600 }}>
-              <QrCode size={14} /> Reserva vía QR / Web
-            </div>
-            <h2 style={{ marginTop: 6 }}>Reserva tu Turno</h2>
-            <p>Ingresa tus datos para agendar tu cita rápido y fácil.</p>
+        <button className="quiet-admin-link" type="button" onClick={onAdminClick}>
+          Panel
+        </button>
+      </header>
+
+      {submittedTurno ? (
+        <section className="booking-confirmation" aria-live="polite">
+          <div className="confirmation-icon"><CalendarCheck size={26} strokeWidth={1.7} /></div>
+          <h1>Tu Solicitud está lista</h1>
+          <p className="confirmation-caption">Revisá los datos</p>
+
+          <div className="summary-card">
+            <h2>Resumen del turno</h2>
+            <dl className="summary-list">
+              <div><dt>Fecha</dt><dd>{formatDate(submittedTurno.fecha_hora)}</dd></div>
+              <div><dt>Hora</dt><dd>{formatTime(submittedTurno.fecha_hora)}</dd></div>
+              <div><dt>Servicio</dt><dd>{getServiceLabel(submittedTurno.observaciones)}</dd></div>
+              <div><dt>Precio</dt><dd>A confirmar</dd></div>
+            </dl>
+            <p className="price-note">La barbería confirmará el precio. No se realizó ningún pago.</p>
           </div>
 
-          {errorMsg && (
-            <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: 'var(--accent-red)', padding: 12, borderRadius: 8, fontSize: '0.85rem' }}>
-              {errorMsg}
-            </div>
-          )}
+          <button className="text-action" type="button" onClick={resetBooking}>
+            <ArrowRight size={17} /> Reservar otro turno
+          </button>
+        </section>
+      ) : (
+        <section className="booking-content">
+          <div className="booking-heading">
+            <h1>Reservá tu turno</h1>
+            <p>Elegí el servicio y el horario que mejor te quede.</p>
+          </div>
 
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label">Nombre y Apellido *</label>
+          {errorMsg && <div className="form-alert" role="alert">{errorMsg}</div>}
+
+          <form className="booking-form" onSubmit={handleSubmit}>
+            <div className="design-field">
+              <label htmlFor="client-name">Nombre</label>
               <input
-                type="text"
+                id="client-name"
                 name="nombre"
-                className="form-input"
-                placeholder="Ej: Carlos Rossi"
+                autoComplete="name"
+                placeholder="Tu nombre y apellido"
                 value={formData.nombre}
                 onChange={handleChange}
                 required
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Teléfono (WhatsApp) *</label>
+            <div className="design-field">
+              <label htmlFor="client-phone">Teléfono</label>
               <input
-                type="tel"
+                id="client-phone"
                 name="telefono"
-                className="form-input"
-                placeholder="Ej: 1122334455"
+                type="tel"
+                autoComplete="tel"
+                inputMode="tel"
+                placeholder="Tu número de contacto"
                 value={formData.telefono}
                 onChange={handleChange}
                 required
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Email (Opcional)</label>
-              <input
-                type="email"
-                name="email"
-                className="form-input"
-                placeholder="ejemplo@correo.com"
-                value={formData.email}
-                onChange={handleChange}
-              />
+            <div className="design-field">
+              <label htmlFor="client-service">Servicio deseado</label>
+              <div className="field-with-icon">
+                <input
+                  id="client-service"
+                  value={service}
+                  onChange={event => setService(event.target.value)}
+                  placeholder="Contanos qué servicio buscás"
+                  aria-label="Servicio deseado"
+                />
+                <ChevronDown size={18} aria-hidden="true" />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Fecha y Horario *</label>
+            <div className="design-field">
+              <label htmlFor="client-date">Fecha</label>
               <button
+                id="client-date"
+                className="design-input-button"
                 type="button"
-                className="btn-secondary"
-                style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                 onClick={() => setIsDatePickerOpen(true)}
               >
-                <span>{selectedDateTime ? `📅 ${selectedDateTime}` : 'Seleccionar fecha y hora...'}</span>
-                <Calendar size={18} color="var(--primary-color)" />
+                <span>{selectedDateTime ? formatDate(selectedDateTime) : 'Seleccionar fecha'}</span>
+                <CalendarDays size={18} />
               </button>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Servicio / Observaciones</label>
-              <textarea
-                name="observaciones"
-                className="form-textarea"
-                rows="2"
-                placeholder="Ej: Corte de pelo + perfilado de barba"
-                value={formData.observaciones}
-                onChange={handleChange}
-              />
+            <div className="design-field">
+              <label htmlFor="client-time">Hora disponible</label>
+              <button
+                id="client-time"
+                className="design-input-button"
+                type="button"
+                onClick={() => setIsDatePickerOpen(true)}
+              >
+                <span>{selectedDateTime ? formatTime(selectedDateTime) : 'Seleccionar hora'}</span>
+                <Clock3 size={18} />
+              </button>
             </div>
 
-            <button type="submit" className="btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Procesando...' : 'Confirmar Reserva de Turno'}
+            <button className="design-primary-button" type="submit" disabled={isSubmitting}>
+              <CalendarCheck size={17} />
+              {isSubmitting ? 'Procesando…' : 'Reservar turno'}
             </button>
           </form>
-
-          <DatePickerModal
-            isOpen={isDatePickerOpen}
-            onClose={() => setIsDatePickerOpen(false)}
-            onSelectDateTime={(dt) => setSelectedDateTime(dt)}
-          />
-        </>
+        </section>
       )}
-    </div>
+
+      <DatePickerModal
+        isOpen={isDatePickerOpen}
+        onClose={() => setIsDatePickerOpen(false)}
+        onSelectDateTime={dateTime => setSelectedDateTime(dateTime)}
+      />
+    </main>
   );
 }
